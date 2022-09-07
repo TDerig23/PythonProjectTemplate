@@ -20,3 +20,13 @@
 # Run `pre-commit` locally.
 
 `pre-commit run --all-files`
+
+# to add new libraries to ubuntu add library name to
+
+# requirements in file and run
+
+# pip-compile --output-file=requirements.txt on ubuntu, then go to requirements.txt and manually install to pycharm
+
+# a yellow window will appear for the manual download.
+
+# use pre-commit run --all-files on ubuntu terminal to format.
