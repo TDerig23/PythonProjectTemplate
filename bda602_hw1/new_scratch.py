@@ -1,8 +1,8 @@
 import pandas
 
 
-class DataLoader():
-    def __init__(self,filename):
+class DataLoader:
+    def __init__(self, filename):
         print("Starting Data Loader")
         self.data = pandas.read_csv(filename)
 
