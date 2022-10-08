@@ -30,3 +30,7 @@
 # a yellow window will appear for the manual download.
 
 # use pre-commit run --all-files on ubuntu terminal to format.
+
+# use with subtable as (select \* from some table), subtable 2 as ( )
+
+# select \* from subtable
