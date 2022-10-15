@@ -263,7 +263,7 @@ def decision_tree_setup(dataframe):
     # Plot the decision tree
     plot_decision_tree(
         decision_tree=decision_tree,
-        feature_names=x,
+        feature_names=X,
         class_names="classification",
         file_out="../../plots/lecture_6_iris_tree_full",
     )
@@ -278,11 +278,11 @@ def decision_tree_setup(dataframe):
     )
     decision_tree_grid_search.fit(X=X, y=y)
 
-    cv_results = DataFrame(decision_tree_grid_search.cv_results_["params"])
+    cv_results = dataframe(decision_tree_grid_search.cv_results_["params"])
     cv_results["score"] = decision_tree_grid_search.cv_results_["mean_test_score"]
-    print_heading("Cross validation results")
+    print("Cross validation results")
     print(cv_results)
-    print_heading("Cross validation results - HTML table")
+    print("Cross validation results - HTML table")
     print(cv_results.to_html())
 
     # Plot these cross_val results
@@ -328,13 +328,15 @@ def decision_tree_setup(dataframe):
     )
     return
 
-
+### column sep separates the cat from the cont columns
 def main():
     cont_resp_cat_predictor()
     cat_resp_cont_predictor()
     cat_response_cat_predictor()
     cont_response_cont_predictor()
     datasetregression()
+    get_column_names()
+    column_sep()
     return
 
 
