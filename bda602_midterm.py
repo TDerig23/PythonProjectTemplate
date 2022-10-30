@@ -5,15 +5,13 @@ import pandas as pd
 import seaborn
 from sklearn import datasets
 import sys
-
+import warnings
 import numpy
 from plotly import express as px
 from plotly import figure_factory as ff
 from plotly import graph_objects as go
 from sklearn.metrics import confusion_matrix
 
-titanic_df = pd.read_csv(
-    "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv")
 
 
 TITANIC_PREDICTORS = [
@@ -116,82 +114,220 @@ def get_test_data_set(data_set_name: str = None) -> (pd.DataFrame, List[str], st
 dataframe, predictors, response = get_test_data_set("breast_cancer")
 
 
-
-sibsp = dataframe['worst texture'].tolist()
-
-
-# dont separate the dataframe, determine if predictors are continious or categroical and make a list from it.
-## also use a separate function to determine if response has n.unique == 2 then boolean (use label encoder)
-## loop through to find the datatype of each predictor create a list of the types.
 def column_sep(dataframe):
-    cat_df = pd.DataFrame()
-    cont_df = pd.DataFrame()
+    predictor_name = []
+    predictor_type = []
     for column in dataframe.columns:
         if dataframe[column].dtypes == "bool" or dataframe[column].dtypes == "object" or len(
-                pd.unique(dataframe[column])) == 2:
-            cat_df[column] = dataframe[column]
+                pd.unique(dataframe[column])) < 5:
+            predictor_name.append(column)
+            predictor_type.append("categorical")
         else:
-            cont_df[column] = dataframe[column]
+            predictor_name.append(column)
+            predictor_type.append("continuous")
 
-    return cat_df, cont_df
+    predictor_list = list(map(list, zip(predictor_name, predictor_type)))
+
+    return predictor_list
 
 
-cat_df, cont_df = column_sep(dataframe)
+predictor_list = column_sep(dataframe)
 
+def fill_na(data):
+    if isinstance(data, pd.Series):
+        return data.fillna(0)
+    else:
+        return numpy.array([value if value is not None else 0 for value in data])
 
-# dont separate the dataframe, determine if predictors are continious or categroical and make a list from it.
-## also use a separate function to determine if response has n.unique == 2 then boolean (use label encoder)
-## loop through to find the datatype of each predictor create a list of the types.
-def column_sep(dataframe):
-    predictor_dict = {}
-    for column in dataframe.columns:
-        if dataframe[column].dtypes == "bool" or dataframe[column].dtypes == "object" or len(
-                pd.unique(dataframe[column])) == 2:
-            predictor_dict[column] = "categorical"
+def cat_correlation(x, y, bias_correction=True, tschuprow=False):
+    """
+    Calculates correlation statistic for categorical-categorical association.
+    The two measures supported are:
+    1. Cramer'V ( default )
+    2. Tschuprow'T
+
+    SOURCES:
+    1.) CODE: https://github.com/MavericksDS/pycorr
+    2.) Used logic from:
+        https://stackoverflow.com/questions/20892799/using-pandas-calculate-cram%C3%A9rs-coefficient-matrix
+        to ignore yates correction factor on 2x2
+    3.) Haven't validated Tschuprow
+
+    Bias correction and formula's taken from : https://www.researchgate.net/publication/270277061_A_bias-correction_for_Cramer's_V_and_Tschuprow's_T
+
+    Wikipedia for Cramer's V: https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V
+    Wikipedia for Tschuprow' T: https://en.wikipedia.org/wiki/Tschuprow%27s_T
+    Parameters:
+    -----------
+    x : list / ndarray / Pandas Series
+        A sequence of categorical measurements
+    y : list / NumPy ndarray / Pandas Series
+        A sequence of categorical measurements
+    bias_correction : Boolean, default = True
+    tschuprow : Boolean, default = False
+               For choosing Tschuprow as measure
+    Returns:
+    --------
+    float in the range of [0,1]
+    """
+    corr_coeff = numpy.nan
+    try:
+        x, y = fill_na(x), fill_na(y)
+        crosstab_matrix = pd.crosstab(x, y)
+        n_observations = crosstab_matrix.sum().sum()
+
+        yates_correct = True
+        if bias_correction:
+            if crosstab_matrix.shape == (2, 2):
+                yates_correct = False
+
+        chi2, _, _, _ = stats.chi2_contingency(
+            crosstab_matrix, correction=yates_correct
+        )
+        phi2 = chi2 / n_observations
+
+        # r and c are number of categories of x and y
+        r, c = crosstab_matrix.shape
+        if bias_correction:
+            phi2_corrected = max(0, phi2 - ((r - 1) * (c - 1)) / (n_observations - 1))
+            r_corrected = r - ((r - 1) ** 2) / (n_observations - 1)
+            c_corrected = c - ((c - 1) ** 2) / (n_observations - 1)
+            if tschuprow:
+                corr_coeff = numpy.sqrt(
+                    phi2_corrected / numpy.sqrt((r_corrected - 1) * (c_corrected - 1))
+                )
+                return corr_coeff
+            corr_coeff = numpy.sqrt(
+                phi2_corrected / min((r_corrected - 1), (c_corrected - 1))
+            )
+            return corr_coeff
+        if tschuprow:
+            corr_coeff = numpy.sqrt(phi2 / numpy.sqrt((r - 1) * (c - 1)))
+            return corr_coeff
+        corr_coeff = numpy.sqrt(phi2 / min((r - 1), (c - 1)))
+        return corr_coeff
+    except Exception as ex:
+        print(ex)
+        if tschuprow:
+            warnings.warn("Error calculating Tschuprow's T", RuntimeWarning)
         else:
-            predictor_dict[column] = "continuous"
+            warnings.warn("Error calculating Cramer's V", RuntimeWarning)
+        return corr_coeff
 
-    return predictor_dict
-
-
-predictors = column_sep(dataframe)
-
-for key, value in predictors.items():
-    print
-
-## get datatype and dataname
-predictors
-
-
-def type_chooser(predictors):
-    cont_cont_df = pd.DataFrame()
-    for key1 in range(len(predictors)):
-        for key2 in range(key1, len(predictors)):
-            if predictors.get(key1) == "continuous" and predictors.get(key2) == "continuous":
-                res = stats.pearsonr(dataframe[key1], dataframe[key2])
-                cont_cont_df["Pearsons_R"] = res
-            elif predictors.get(key1) == "continuous" and predictors.get(key2) == "categorical":
-                res = stats.pearsonr(dataframe[key1], dataframe[key2])
-                cont_cont_df["Pearsons_R"] = res
-
-
-res = type_chooser(predictors)
-
-print(res)
-
-res = stats.pearsonr([1, 2, 3, 4, 5], [10, 9, 2.5, 6, 4])
-res
-
-## for pearsons r continious v continious loop on columns for cont_df (double for loop) get pearson correlation. store in dataframe
-## enumerate the index
-## Continuous / Categorical pairs df.corr[]
-# Categorical / Categorical pairs us cat_correlation
-
-## use for loop to determine the graphing types. for loop then if else to determine if response is boolean or not
-## then correspond to correct correlation type.
+def cat_cont_correlation_ratio(categories, values):
+    """
+    Correlation Ratio: https://en.wikipedia.org/wiki/Correlation_ratio
+    SOURCE:
+    1.) https://towardsdatascience.com/the-search-for-categorical-correlation-a1cf7f1888c9
+    :param categories: Numpy array of categories
+    :param values: Numpy array of values
+    :return: correlation
+    """
+    f_cat, _ = pd.factorize(categories)
+    cat_num = numpy.max(f_cat) + 1
+    y_avg_array = numpy.zeros(cat_num)
+    n_array = numpy.zeros(cat_num)
+    for i in range(0, cat_num):
+        cat_measures = values[numpy.argwhere(f_cat == i).flatten()]
+        n_array[i] = len(cat_measures)
+        y_avg_array[i] = numpy.average(cat_measures)
+    y_total_avg = numpy.sum(numpy.multiply(y_avg_array, n_array)) / numpy.sum(n_array)
+    numerator = numpy.sum(
+        numpy.multiply(
+            n_array, numpy.power(numpy.subtract(y_avg_array, y_total_avg), 2)
+        )
+    )
+    denominator = numpy.sum(numpy.power(numpy.subtract(values, y_total_avg), 2))
+    if numerator == 0:
+        eta = 0.0
+    else:
+        eta = numpy.sqrt(numerator / denominator)
+    return eta
 
 
-# for predictor1 in cat df
+def type_sep(predictor_list, dataframe):
+    cont_cont_preds1 = []  # done
+    cont_cont_preds2 = []  # done
+    cont_cont_pearsons = []  # done
+    cont_cont_html = []  # done
+    #     cont_cont_preds1_values = [] #done
+    #     cont_cont_preds2_values = [] #done
+
+    cat_cont_preds1 = []
+    cat_cont_preds2 = []
+    cat_cont_html = []
+    for reg_predictor, reg_type in predictor_list:
+        for sorted_pred, sorted_type in predictor_list[1:]:
+            if reg_type == "continuous" and sorted_type == "continuous":
+                pearsons_r = stats.pearsonr(dataframe[reg_predictor].values, dataframe[sorted_pred].values)
+                cont_cont_preds1.append(reg_predictor)
+                cont_cont_preds2.append(sorted_pred)
+                cont_cont_pearsons.append(pearsons_r[0])
+                fig = px.scatter(dataframe, x=dataframe[reg_predictor].values, y=dataframe[sorted_pred].values,
+                                 trendline="ols")
+                fig.update_layout(title=f"chart{reg_predictor}_{sorted_pred}",
+                                  xaxis_title=f"Variable: {reg_predictor}", yaxis_title=f"Variable:{sorted_pred}")
+                html = "C:/Users/thoma\OneDrive/Documents/bda602/midterm/html_links/{0}_{1}_file.html".format(
+                    reg_predictor, sorted_pred)
+                fig.write_html(html)
+                cont_cont_html.append(html)
+
+                #             elif reg_type == "continuous" and sorted_type == "categorical" or reg_type == "categorical" and sorted_type == "continuous":  :
+                #                 cat_preds = np.array([sorted_pred])
+                #                 cont_preds = np.array([reg_predictor])
+                #                 cat_cont_array = np.concatenate((cat_preds,cont_preds))
+                #                 cat_array = dataframe[sorted_pred].to_numpy()
+                #                 flattened_cat = cat_array.flatten()
+
+                #                 cat_array = dataframe[sorted_pred].values.flatten()
+                #                 le = preprocessing.LabelEncoder()
+                #                 le.fit([dataframe[sorted_pred].flatten()])
+                #                 classes = le.classes_
+                #                 transformed_predictors = le.transform(classes)
+                fig1 = px.scatter(dataframe, x=dataframe[reg_predictor].values, y=dataframe[sorted_pred].values,
+                                  trendline="ols")
+                fig1.update_layout(title=f"chart{reg_predictor}_{sorted_pred}",
+                                   xaxis_title=f"Variable: {reg_predictor}", yaxis_title=f"Variable:{sorted_pred}")
+                html_cat_cont = "C:/Users/thoma\OneDrive/Documents/bda602/midterm/html_links/{0}_{1}_file.html".format(
+                    reg_predictor, sorted_pred)
+                fig1.write_html(html_cat_cont)
+                cat_cont_html.append(html)
+
+            #                 cat_cont_values = np.array([dataframe[reg_predictors],dataframe[sorted_pred]])
+    #                 eta = cat_cont_correlation_ratio(cat_cont_categories,cat_cont_values)
+
+    #             else:
+
+    #             x = dataframe[sorted_pred]
+    #             le = preprocessing.LabelEncoder()
+    #             le.fit([cat_array])
+    #             classes = le.classes_
+    #             transformed_predictors = le.transform(classes)
+    #             transformed_predictors
+
+    cont_cont_df = pd.DataFrame(
+        {"Predictor 1": cont_cont_preds1, "Predictor 2": cont_cont_preds2, "Pearsons R": cont_cont_pearsons,
+         "HTML_LinregGraph": cont_cont_html})
+    cont_cont_html = cont_cont_df.to_html()
+    text_file = open("C:/Users/thoma\OneDrive/Documents/bda602/midterm/html_links/test_dataframe.html", "w")
+    text_file.write(cont_cont_html)
+    text_file.close()
+
+    return cont_cont_df
 
 
+cont_cont_df = type_sep(predictor_list, dataframe)
+
+
+data = cont_cont_df["Pearsons R"].values
+heatmap = px.imshow(data,labels=dict(x=cont_cont_df["Predictor 1"], y=cont_cont_df["Predictor 2"]))
+heatmap.show()
+
+
+def main():
+    
+    return
+
+if __name__ == "__main__":
+    sys.exit(main())
 
